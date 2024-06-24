@@ -1,8 +1,9 @@
 const ReadyResource = require('ready-resource')
 const b4a = require('b4a')
 const RPC = require('protomux-rpc')
-const cenc = require('compact-encoding')
 const crypto = require('crypto')
+
+const { MetricsReplyEnc } = require('./lib/encodings')
 
 class DhtPromClient extends ReadyResource {
   constructor (dht, promClient, scraperPublicKey, { keyPair } = {}) {
@@ -26,10 +27,6 @@ class DhtPromClient extends ReadyResource {
   }
 
   async _open () {
-    // Null operation, to crash before the first actual
-    // request in case the metrics themselves are bugged
-    await this.promClient.register.metrics()
-
     await this.server.listen(this.keyPair)
   }
 
@@ -48,14 +45,23 @@ class DhtPromClient extends ReadyResource {
     const rpc = new RPC(socket, { protocol: 'prometheus-metrics' })
     rpc.respond(
       'metrics',
-      { responseEncoding: cenc.string },
+      { responseEncoding: MetricsReplyEnc },
       async () => {
-        // TODO: error path when collecting metrics crashes
         this.emit('metrics-request', { uid, remotePublicKey })
-        const metrics = await this.promClient.register.metrics()
-
-        this.emit('metrics-success', { uid })
-        return metrics
+        try {
+          const metrics = await this.promClient.register.metrics()
+          this.emit('metrics-success', { uid })
+          return {
+            success: true,
+            metrics
+          }
+        } catch (error) {
+          this.emit('metrics-error', { error, uid })
+          return {
+            success: false,
+            errorMessage: `Failed to obtain metrics (uid ${uid})`
+          }
+        }
       }
     )
   }
