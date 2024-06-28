@@ -1,27 +1,22 @@
 const test = require('brittle')
 const promClient = require('prom-client')
 const createTestnet = require('hyperdht/testnet')
-const RPC = require('protomux-rpc')
-const { once } = require('events')
-const safetyCatch = require('safety-catch')
+const HyperDHT = require('hyperdht')
+const Hyperswarm = require('hyperswarm')
 
 const DhtPromClient = require('./index')
-const HyperDHT = require('hyperdht')
-const { MetricsReplyEnc } = require('./lib/encodings')
+const Scraper = require('./scraper')
 
 test('Scraper can get metrics', async t => {
   t.plan(4)
-  const { dhtPromClient, scraperDht } = await setup(t)
-
-  await dhtPromClient.ready()
-  const clientKey = dhtPromClient.publicKey
+  const { dhtPromClient, scraperSwarm } = await setup(t)
 
   let reqUid = null
   dhtPromClient.on('metrics-request', ({ uid, remotePublicKey }) => {
     reqUid = uid
     t.alike(
       remotePublicKey,
-      scraperDht.defaultKeyPair.publicKey,
+      scraperSwarm.keyPair.publicKey,
       'metrics-request emitted'
     )
   })
@@ -30,7 +25,11 @@ test('Scraper can get metrics', async t => {
     t.is(uid, reqUid, 'metrics-success emitted with same uid')
   })
 
-  const res = await lookup(scraperDht, clientKey)
+  await dhtPromClient.ready()
+
+  const scraper = await setupScraper(t, scraperSwarm, dhtPromClient)
+
+  const res = await scraper.lookup()
   t.is(res.success, true, 'Success is true')
 
   const metrics = res.metrics
@@ -42,35 +41,36 @@ test('Scraper can get metrics', async t => {
 })
 
 test('Other clients cannot get metrics', async t => {
-  t.plan(1)
+  t.plan(2)
 
   const { dhtPromClient, bootstrap } = await setup(t)
 
   await dhtPromClient.ready()
-  const clientKey = dhtPromClient.publicKey
 
-  const otherDht = new HyperDHT({ bootstrap })
+  const otherSwarm = new Hyperswarm({ bootstrap })
 
   dhtPromClient.on('firewall-block', async ({ remotePublicKey }) => {
     t.alike(
       remotePublicKey,
-      otherDht.defaultKeyPair.publicKey,
+      otherSwarm.keyPair.publicKey,
       'Firewall blocked the request'
     )
 
-    await otherDht.destroy().catch(safetyCatch)
+    await otherSwarm.destroy()
   })
 
-  // Expected to throw a PEER_NOT_FOUND error after ~5s
-  const lookupProm = lookup(otherDht, clientKey)
-  lookupProm.catch(safetyCatch)
-  // TODO: find a way to make it throw faster, and
-  // test for it explicitly
+  const scraper = await setupScraper(t, otherSwarm, dhtPromClient)
+
+  await t.exception(
+    async () => scraper.lookup(),
+    /Not connected/,
+    'Client cannot connect'
+  )
 })
 
 test('Error handling when getting metrics throws', async t => {
   t.plan(4)
-  const { dhtPromClient, scraperDht } = await setup(t)
+  const { dhtPromClient, scraperSwarm } = await setup(t)
 
   new promClient.Gauge({ // eslint-disable-line no-new
     name: 'broken_metric',
@@ -82,8 +82,6 @@ test('Error handling when getting metrics throws', async t => {
 
   await dhtPromClient.ready()
 
-  const clientKey = dhtPromClient.publicKey
-
   let reqUid = null
   dhtPromClient.on('metrics-request', ({ uid, remotePublicKey }) => {
     reqUid = uid
@@ -94,7 +92,9 @@ test('Error handling when getting metrics throws', async t => {
     t.is(error.message, 'I break stuff', 'Correct error on event')
   })
 
-  const res = await lookup(scraperDht, clientKey)
+  const scraper = await setupScraper(t, scraperSwarm, dhtPromClient)
+
+  const res = await scraper.lookup()
   t.is(res.success, false, 'no success on error')
 
   const errorMessage = res.errorMessage
@@ -105,29 +105,6 @@ test('Error handling when getting metrics throws', async t => {
   )
 })
 
-async function lookup (dht, key) {
-  // TODO: expose a proper client method as part of the API
-  const socket = dht.connect(key)
-  socket.on('error', safetyCatch)
-
-  await socket.opened
-
-  if (!socket.connected) {
-    throw new Error('Could not open socket')
-  }
-
-  const rpc = new RPC(socket, { protocol: 'prometheus-metrics' })
-  await once(rpc, 'open')
-
-  const res = await rpc.request(
-    'metrics',
-    null,
-    { responseEncoding: MetricsReplyEnc }
-  )
-
-  return res
-}
-
 async function setup (t) {
   promClient.collectDefaultMetrics() // So we have something to scrape
   t.teardown(() => promClient.register.clear())
@@ -136,15 +113,26 @@ async function setup (t) {
   const bootstrap = testnet.bootstrap
 
   const dht = new HyperDHT({ bootstrap })
-  const scraperDht = new HyperDHT({ bootstrap })
-  const scraperPubKey = scraperDht.defaultKeyPair.publicKey
+  const scraperSwarm = new Hyperswarm({ bootstrap })
+  const scraperPubKey = scraperSwarm.keyPair.publicKey
   const dhtPromClient = new DhtPromClient(dht, promClient, scraperPubKey)
 
   t.teardown(async () => {
     await dhtPromClient.close()
-    await scraperDht.destroy()
+    await scraperSwarm.destroy()
     await testnet.destroy()
   })
 
-  return { dhtPromClient, scraperDht, bootstrap }
+  return { dhtPromClient, scraperSwarm, bootstrap }
+}
+
+async function setupScraper (t, scraperSwarm, dhtPromClient) {
+  const scraper = new Scraper(scraperSwarm, dhtPromClient.publicKey)
+
+  t.teardown(async () => await scraper.close())
+
+  await scraper.ready()
+  await scraper.swarm.flush() // For race conditions
+
+  return scraper
 }

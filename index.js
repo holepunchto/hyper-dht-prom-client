@@ -5,6 +5,8 @@ const crypto = require('crypto')
 
 const { MetricsReplyEnc } = require('./lib/encodings')
 
+const PROTOCOL_NAME = 'prometheus-metrics'
+
 class DhtPromClient extends ReadyResource {
   constructor (dht, promClient, scraperPublicKey, { keyPair } = {}) {
     super()
@@ -42,7 +44,7 @@ class DhtPromClient extends ReadyResource {
       this.emit('socket-error', { error, uid, remotePublicKey })
     })
 
-    const rpc = new RPC(socket, { protocol: 'prometheus-metrics' })
+    const rpc = new RPC(socket, { protocol: PROTOCOL_NAME })
     rpc.respond(
       'metrics',
       { responseEncoding: MetricsReplyEnc },
