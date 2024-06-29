@@ -3,6 +3,7 @@ const promClient = require('prom-client')
 const createTestnet = require('hyperdht/testnet')
 const HyperDHT = require('hyperdht')
 const Hyperswarm = require('hyperswarm')
+const hypCrypto = require('hypercore-crypto')
 
 const DhtPromClient = require('./index')
 const Scraper = require('./scraper')
@@ -112,10 +113,12 @@ async function setup (t) {
   const testnet = await createTestnet()
   const bootstrap = testnet.bootstrap
 
+  const dummySecret = hypCrypto.randomBytes(32)
+
   const dht = new HyperDHT({ bootstrap })
   const scraperSwarm = new Hyperswarm({ bootstrap })
   const scraperPubKey = scraperSwarm.keyPair.publicKey
-  const dhtPromClient = new DhtPromClient(dht, promClient, scraperPubKey)
+  const dhtPromClient = new DhtPromClient(dht, promClient, scraperPubKey, 'dummy-alias', dummySecret, { bootstrap })
 
   t.teardown(async () => {
     await dhtPromClient.close()
