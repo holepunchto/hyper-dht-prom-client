@@ -2,18 +2,21 @@ const ReadyResource = require('ready-resource')
 const b4a = require('b4a')
 const RPC = require('protomux-rpc')
 const crypto = require('crypto')
+const safetyCatch = require('safety-catch')
 
 const { MetricsReplyEnc } = require('./lib/encodings')
+const AliasRpcClient = require('./lib/alias-rpc-client')
 
 const PROTOCOL_NAME = 'prometheus-metrics'
 
 class DhtPromClient extends ReadyResource {
-  constructor (dht, promClient, scraperPublicKey, { keyPair } = {}) {
+  constructor (dht, promClient, scraperPublicKey, alias, scraperSecret, { keyPair, bootstrap } = {}) {
     super()
 
     this.dht = dht
     this.promClient = promClient
     this.scraperPublicKey = scraperPublicKey
+    this.alias = alias
     this.keyPair = keyPair || this.dht.defaultKeyPair
 
     const connectionKeepAlive = 5000
@@ -22,18 +25,49 @@ class DhtPromClient extends ReadyResource {
       { firewall, connectionKeepAlive },
       this._onconnection.bind(this)
     )
+
+    this.aliasClient = new AliasRpcClient(
+      this.scraperPublicKey,
+      scraperSecret,
+      { bootstrap }
+    )
+    this.registerIntervalMs = 1000 * 60 * 60
+    this._registerInterval = null
   }
 
   get publicKey () {
     return this.keyPair.publicKey
   }
 
+  // Never throws
+  async _tryRegisterAlias () {
+    try {
+      const updated = await this.aliasClient.registerAlias(
+        this.alias, this.publicKey
+      )
+      this.emit('register-alias-success', { updated })
+    } catch (e) {
+      // Occasonal errors are expected (unreachable etc)
+      safetyCatch(e)
+      this.emit('register-alias-error', e)
+    }
+  }
+
   async _open () {
     await this.server.listen(this.keyPair)
+
+    await this.aliasClient.ready()
+    this._registerInterval = setInterval(
+      this._tryRegisterAlias, this.registerIntervalMs
+    )
+
+    await this._tryRegisterAlias() // Never throws
   }
 
   async _close () {
+    if (this._registerInterval) clearInterval(this._registerInterval)
     await this.dht.destroy()
+    await this.aliasClient.close()
   }
 
   _onconnection (socket) {
