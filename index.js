@@ -10,11 +10,16 @@ const AliasRpcClient = require('./lib/alias-rpc-client')
 const PROTOCOL_NAME = 'prometheus-metrics'
 
 class DhtPromClient extends ReadyResource {
-  constructor (dht, promClient, scraperPublicKey, alias, scraperSecret, { keyPair, bootstrap } = {}) {
+  constructor (dht, getMetrics, scraperPublicKey, alias, scraperSecret, { keyPair, bootstrap } = {}) {
     super()
 
     this.dht = dht
-    this.promClient = promClient
+
+    const isPromClient = getMetrics.register?.metrics != null
+    this.getMetrics = isPromClient
+      ? getMetrics.register.metrics.bind(getMetrics.register)
+      : getMetrics
+
     this.scraperPublicKey = scraperPublicKey
     this.alias = alias
     this.keyPair = keyPair || this.dht.defaultKeyPair
@@ -85,7 +90,7 @@ class DhtPromClient extends ReadyResource {
       async () => {
         this.emit('metrics-request', { uid, remotePublicKey })
         try {
-          const metrics = await this.promClient.register.metrics()
+          const metrics = await this.getMetrics()
           this.emit('metrics-success', { uid })
           return {
             success: true,

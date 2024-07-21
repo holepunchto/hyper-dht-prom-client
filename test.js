@@ -41,6 +41,36 @@ test('Scraper can get metrics', async t => {
   )
 })
 
+test('Can pass own getMetrics', async t => {
+  const testnet = await createTestnet()
+  const bootstrap = testnet.bootstrap
+
+  const dummySecret = hypCrypto.randomBytes(32)
+
+  const dht = new HyperDHT({ bootstrap })
+  const scraperSwarm = new Hyperswarm({ bootstrap })
+  const scraperPubKey = scraperSwarm.keyPair.publicKey
+  const getMetrics = () => 'Some metrics'
+  const dhtPromClient = new DhtPromClient(dht, getMetrics, scraperPubKey, 'dummy-alias', dummySecret, { bootstrap })
+  await dhtPromClient.ready()
+
+  const scraper = await setupScraper(t, scraperSwarm, dhtPromClient)
+
+  const res = await scraper.lookup()
+  t.is(res.success, true, 'Success is true')
+
+  const metrics = res.metrics
+  t.is(
+    metrics === 'Some metrics',
+    true,
+    'Got prometheus metrics'
+  )
+
+  await scraperSwarm.destroy()
+  await dhtPromClient.close()
+  await testnet.destroy()
+})
+
 test('Other clients cannot get metrics', async t => {
   t.plan(2)
 
