@@ -1,10 +1,10 @@
 const crypto = require('crypto')
 const ReadyResource = require('ready-resource')
-const safetyCatch = require('safety-catch')
 const RPC = require('protomux-rpc')
 const { MetricsReplyEnc } = require('./lib/encodings')
 const b4a = require('b4a')
 const idEnc = require('hypercore-id-encoding')
+const safetyCatch = require('safety-catch')
 
 const PROTOCOL_NAME = 'prometheus-metrics'
 
@@ -39,20 +39,31 @@ class DhtPromScraper extends ReadyResource {
   }
 
   _connectionHandler (socket, peerInfo) {
+    const uid = crypto.randomUUID()
+
+    this.emit('connection-open', { uid, peerInfo, targetKey: this.targetKey })
+
     if (!b4a.equals(peerInfo.publicKey, this.targetKey)) {
+      this.emit('connection-ignore', { uid })
       // Not our connection
       // TODO: confirm this is a sensible approach
       return
     }
 
-    const connUid = crypto.randomUUID() // TODO: check if actually needed
-    this._currentConnUid = connUid
+    this._currentConnUid = uid // TODO: check if actually needed
 
     const rpc = new RPC(socket, { protocol: PROTOCOL_NAME })
+    rpc.on('close', () => {
+      socket.destroy(new Error('protomux-rpc got destroyed')) // Force a reconnect
+    })
 
-    socket.on('error', safetyCatch)
+    socket.on('error', error => {
+      safetyCatch(error)
+      this.emit('connection-error', { error, uid })
+    })
     socket.on('close', () => {
-      if (connUid === this._currentConnUid) {
+      this.emit('connection-close', { uid })
+      if (uid === this._currentConnUid) {
         // No other connection arrived in the the mean time
         // TODO: add tests for the 2 cases
         this.socket = null
