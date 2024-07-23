@@ -3,6 +3,7 @@ const b4a = require('b4a')
 const RPC = require('protomux-rpc')
 const crypto = require('crypto')
 const safetyCatch = require('safety-catch')
+const idEnc = require('hypercore-id-encoding')
 
 const { MetricsReplyEnc } = require('./lib/encodings')
 const AliasRpcClient = require('./lib/alias-rpc-client')
@@ -13,6 +14,8 @@ class DhtPromClient extends ReadyResource {
   constructor (dht, getMetrics, scraperPublicKey, alias, scraperSecret, { keyPair, bootstrap } = {}) {
     super()
 
+    scraperPublicKey = idEnc.decode(scraperPublicKey)
+    scraperSecret = idEnc.decode(scraperSecret)
     this.dht = dht
 
     const isPromClient = getMetrics.register?.metrics != null
