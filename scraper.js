@@ -4,12 +4,15 @@ const safetyCatch = require('safety-catch')
 const RPC = require('protomux-rpc')
 const { MetricsReplyEnc } = require('./lib/encodings')
 const b4a = require('b4a')
+const idEnc = require('hypercore-id-encoding')
 
 const PROTOCOL_NAME = 'prometheus-metrics'
 
 class DhtPromScraper extends ReadyResource {
   constructor (swarm, promClientPubKey) {
     super()
+
+    promClientPubKey = idEnc.decode(promClientPubKey)
 
     this.swarm = swarm
     this.targetKey = promClientPubKey
