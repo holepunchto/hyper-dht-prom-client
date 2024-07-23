@@ -99,6 +99,24 @@ test('Other clients cannot get metrics', async t => {
   )
 })
 
+test('client regularly re-registers itself', async t => {
+  t.plan(2)
+
+  const { dhtPromClient } = await setup(t, { registerIntervalMs: 200 })
+
+  let nrRegisterAttempts = 0
+  dhtPromClient.on('register-alias-error', () => {
+    nrRegisterAttempts++
+    if (nrRegisterAttempts === 1) t.pass('init register (sanity check)')
+    else if (nrRegisterAttempts === 2) {
+      t.pass('re-registered')
+      t.end()
+    }
+  })
+
+  await dhtPromClient.ready()
+})
+
 test('Error handling when getting metrics throws', async t => {
   t.plan(4)
   const { dhtPromClient, scraperSwarm } = await setup(t)
@@ -136,7 +154,7 @@ test('Error handling when getting metrics throws', async t => {
   )
 })
 
-async function setup (t) {
+async function setup (t, clientOpts = {}) {
   promClient.collectDefaultMetrics() // So we have something to scrape
   t.teardown(() => promClient.register.clear())
 
@@ -148,7 +166,7 @@ async function setup (t) {
   const dht = new HyperDHT({ bootstrap })
   const scraperSwarm = new Hyperswarm({ bootstrap })
   const scraperPubKey = scraperSwarm.keyPair.publicKey
-  const dhtPromClient = new DhtPromClient(dht, promClient, scraperPubKey, 'dummy-alias', dummySecret, { bootstrap })
+  const dhtPromClient = new DhtPromClient(dht, promClient, scraperPubKey, 'dummy-alias', dummySecret, { ...clientOpts, bootstrap })
 
   t.teardown(async () => {
     await dhtPromClient.close()
