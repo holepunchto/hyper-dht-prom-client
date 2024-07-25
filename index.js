@@ -79,15 +79,28 @@ class DhtPromClient extends ReadyResource {
     await this.aliasClient.close()
   }
 
-  _onconnection (socket) {
+  _onconnection (socket, peerInfo) {
     const uid = crypto.randomUUID()
     const remotePublicKey = socket.remotePublicKey
 
+    this.emit('connection-open', { uid, peerInfo, remotePublicKey })
+
     socket.on('error', (error) => {
+      safetyCatch(error)
       this.emit('socket-error', { error, uid, remotePublicKey })
     })
 
     const rpc = new RPC(socket, { protocol: PROTOCOL_NAME })
+    rpc.on('close', () => { // Destroy socket to force a reconnect
+      // TODO: can just be socket.end() (and we don't emit an error)
+
+      // End stream with error (rpc closing is unexpected)
+      socket.on('finish', () => socket.destroy(new Error('RPC closed')))
+
+      // Cleanly close write side (flushes all)
+      socket.end()
+    })
+
     rpc.respond(
       'metrics',
       { responseEncoding: MetricsReplyEnc },
