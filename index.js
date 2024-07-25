@@ -87,7 +87,10 @@ class DhtPromClient extends ReadyResource {
 
     socket.on('error', (error) => {
       safetyCatch(error)
-      this.emit('socket-error', { error, uid, remotePublicKey })
+      this.emit('connection-error', { error, uid, remotePublicKey })
+    })
+    socket.on('close', () => {
+      this.emit('connection-close', { uid, remotePublicKey })
     })
 
     const rpc = new RPC(socket, { protocol: PROTOCOL_NAME })
