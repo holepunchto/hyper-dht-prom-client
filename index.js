@@ -6,7 +6,7 @@ const safetyCatch = require('safety-catch')
 const idEnc = require('hypercore-id-encoding')
 
 const { MetricsReplyEnc } = require('./lib/encodings')
-const AliasRpcClient = require('./lib/alias-rpc-client')
+const AliasRpcClient = require('dht-prom-alias-rpc/client')
 
 const PROTOCOL_NAME = 'prometheus-metrics'
 
