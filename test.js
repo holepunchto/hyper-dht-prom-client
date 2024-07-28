@@ -100,9 +100,18 @@ test('Other clients cannot get metrics', async t => {
 })
 
 test('client regularly re-registers itself', async t => {
-  t.plan(2)
+  t.plan(10)
 
   const { dhtPromClient } = await setup(t, { registerIntervalMs: 200 })
+  dhtPromClient.aliasClient.on(
+    'register-alias-attempt',
+    ({ alias, targetKey, hostname, service }) => {
+      t.is(alias, 'dummy-alias', 'correct alias')
+      t.alike(targetKey, dhtPromClient.publicKey, 'correct key')
+      t.is(hostname, 'my-hostname', 'correct hostname')
+      t.is(service, 'my-service', 'correct service')
+    }
+  )
 
   let nrRegisterAttempts = 0
   dhtPromClient.on('register-alias-error', () => {
@@ -166,7 +175,15 @@ async function setup (t, clientOpts = {}) {
   const dht = new HyperDHT({ bootstrap })
   const scraperSwarm = new Hyperswarm({ bootstrap })
   const scraperPubKey = scraperSwarm.keyPair.publicKey
-  const dhtPromClient = new DhtPromClient(dht, promClient, scraperPubKey, 'dummy-alias', dummySecret, { ...clientOpts, bootstrap })
+  const dhtPromClient = new DhtPromClient(
+    dht,
+    promClient,
+    scraperPubKey,
+    'dummy-alias',
+    dummySecret,
+    'my-service',
+    { ...clientOpts, bootstrap, hostname: 'my-hostname' }
+  )
 
   t.teardown(async () => {
     await dhtPromClient.close()

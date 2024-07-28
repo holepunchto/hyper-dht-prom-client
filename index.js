@@ -1,3 +1,4 @@
+const os = require('os')
 const ReadyResource = require('ready-resource')
 const b4a = require('b4a')
 const RPC = require('protomux-rpc')
@@ -11,7 +12,7 @@ const AliasRpcClient = require('dht-prom-alias-rpc/client')
 const PROTOCOL_NAME = 'prometheus-metrics'
 
 class DhtPromClient extends ReadyResource {
-  constructor (dht, getMetrics, scraperPublicKey, alias, scraperSecret, { keyPair, bootstrap, registerIntervalMs = 1000 * 60 * 60 } = {}) {
+  constructor (dht, getMetrics, scraperPublicKey, alias, scraperSecret, service, { keyPair, bootstrap, registerIntervalMs = 1000 * 60 * 60, hostname = os.hostname() } = {}) {
     super()
 
     scraperPublicKey = idEnc.decode(scraperPublicKey)
@@ -25,6 +26,9 @@ class DhtPromClient extends ReadyResource {
 
     this.scraperPublicKey = scraperPublicKey
     this.alias = alias
+    this.service = service
+    this.hostname = hostname
+
     this.keyPair = keyPair || this.dht.defaultKeyPair
 
     const connectionKeepAlive = 5000
@@ -52,7 +56,7 @@ class DhtPromClient extends ReadyResource {
   async _tryRegisterAlias () {
     try {
       const updated = await this.aliasClient.registerAlias(
-        this.alias, this.publicKey
+        this.alias, this.publicKey, this.hostname, this.service
       )
       this.emit('register-alias-success', { updated })
     } catch (e) {
