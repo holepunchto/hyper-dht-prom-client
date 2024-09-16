@@ -1,7 +1,7 @@
 const crypto = require('crypto')
 const ReadyResource = require('ready-resource')
 const RPC = require('protomux-rpc')
-const { MetricsReplyEnc } = require('./lib/encodings')
+const { MetricsReplyEnc, MetricsReqEnc } = require('./lib/encodings')
 const b4a = require('b4a')
 const idEnc = require('hypercore-id-encoding')
 const safetyCatch = require('safety-catch')
@@ -9,23 +9,25 @@ const safetyCatch = require('safety-catch')
 const PROTOCOL_NAME = 'prometheus-metrics'
 
 class DhtPromScraper extends ReadyResource {
-  constructor (swarm, promClientPubKey) {
+  constructor (swarm, promClientPubKey, { requestTimeoutMs = 5000 } = {}) {
     super()
 
     promClientPubKey = idEnc.decode(promClientPubKey)
 
     this.swarm = swarm
     this.targetKey = promClientPubKey
+    this.requestTimeoutMs = requestTimeoutMs
 
     this.rpc = null
     this.socket = null
     this._currentConnUid = null
 
     this._boundConnectionHandler = this._connectionHandler.bind(this)
-    this.swarm.on('connection', this._boundConnectionHandler)
   }
 
   _open () {
+    this.swarm.on('connection', this._boundConnectionHandler)
+
     // Handles reconnects/suspends
     this.swarm.joinPeer(this.targetKey)
   }
@@ -38,17 +40,18 @@ class DhtPromScraper extends ReadyResource {
     if (this.socket) this.socket.destroy()
   }
 
-  _connectionHandler (socket, peerInfo) {
+  _connectionHandler (socket) {
     const uid = crypto.randomUUID()
+    const remotePublicKey = socket.remotePublicKey
+    const remoteAddress = `${socket.rawStream.remoteHost}:${socket.rawStream.remotePort}`
 
-    this.emit('connection-open', { uid, peerInfo, targetKey: this.targetKey })
-
-    if (!b4a.equals(peerInfo.publicKey, this.targetKey)) {
-      this.emit('connection-ignore', { uid })
-      // Not our connection
-      // TODO: confirm this is a sensible approach
+    if (!b4a.equals(remotePublicKey, this.targetKey)) {
+      this.emit('connection-ignore', { uid, remotePublicKey, remoteAddress })
+      // Not our connection (probably relevant for another handler)
       return
     }
+
+    this.emit('connection-open', { uid, remotePublicKey, remoteAddress })
 
     this._currentConnUid = uid // TODO: check if actually needed
 
@@ -59,13 +62,12 @@ class DhtPromScraper extends ReadyResource {
 
     socket.on('error', error => {
       safetyCatch(error)
-      this.emit('connection-error', { error, uid })
+      this.emit('connection-error', { error, uid, remotePublicKey, remoteAddress })
     })
     socket.on('close', () => {
-      this.emit('connection-close', { uid })
+      this.emit('connection-close', { uid, remotePublicKey, remoteAddress })
       if (uid === this._currentConnUid) {
         // No other connection arrived in the the mean time
-        // TODO: add tests for the 2 cases
         this.socket = null
         this.rpc = null
         this._currentConnUid = null
@@ -78,18 +80,24 @@ class DhtPromScraper extends ReadyResource {
     this.rpc = rpc
   }
 
-  async lookup () {
+  async requestMetrics ({ major, minor } = {}) {
+    // Note: can throw
+    // (for example on req timeout or if rpc closed halfway through)
+
     if (!this.opened) await this.ready()
 
     if (!this.rpc) throw new Error('Not connected')
 
     if (this.rpc && !this.rpc.opened) await this.rpc.fullyOpened()
 
-    // Note: can throw (for example if rpc closed in the mean time)
     const res = await this.rpc.request(
       'metrics',
-      null,
-      { responseEncoding: MetricsReplyEnc }
+      { major, minor },
+      {
+        requestEncoding: MetricsReqEnc,
+        responseEncoding: MetricsReplyEnc,
+        timeout: this.requestTimeoutMs
+      }
     )
 
     return res

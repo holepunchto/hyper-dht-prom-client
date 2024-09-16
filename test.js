@@ -1,16 +1,33 @@
+const { spawn } = require('child_process')
+const path = require('path')
+
 const test = require('brittle')
 const promClient = require('prom-client')
 const createTestnet = require('hyperdht/testnet')
 const HyperDHT = require('hyperdht')
 const Hyperswarm = require('hyperswarm')
 const hypCrypto = require('hypercore-crypto')
+const NewlineDecoder = require('newline-decoder')
 
 const DhtPromClient = require('./index')
 const Scraper = require('./scraper')
 
+const EXAMPLE_PATH = path.join(__dirname, 'example.js')
+
 test('Scraper can get metrics', async t => {
-  t.plan(4)
+  t.plan(11)
   const { dhtPromClient, scraperSwarm } = await setup(t)
+
+  const infoMessages = []
+  const debugMessages = []
+  dhtPromClient.registerLogger({
+    info: msg => {
+      infoMessages.push(msg)
+    },
+    debug: msg => {
+      debugMessages.push(msg)
+    }
+  })
 
   let reqUid = null
   dhtPromClient.on('metrics-request', ({ uid, remotePublicKey }) => {
@@ -30,7 +47,7 @@ test('Scraper can get metrics', async t => {
 
   const scraper = await setupScraper(t, scraperSwarm, dhtPromClient)
 
-  const res = await scraper.lookup()
+  const res = await scraper.requestMetrics()
   t.is(res.success, true, 'Success is true')
 
   const metrics = res.metrics
@@ -39,6 +56,19 @@ test('Scraper can get metrics', async t => {
     true,
     'Got prometheus metrics'
   )
+
+  // log messages (subset hit in this test)
+
+  t.is(infoMessages.length, 3, 'no unexpected info messages')
+  t.ok(infoMessages[0].includes('Prom client attempting to register dummy-alias'), 'alias-attempt log')
+
+  // Since there is no alias service, it errors
+  t.ok(infoMessages[1].includes('Prom client failed to register alias Error'), 'alias-error log')
+  t.ok(infoMessages[2].includes('Prom client opened connection to'), 'connection-open log')
+
+  t.is(debugMessages.length, 2, 'No unexpected messages')
+  t.ok(debugMessages[0].includes('Prom client received metrics request from'), 'metric req received log')
+  t.ok(debugMessages[1].includes('Prom client successfully processed metrics request'), 'metric req processed log')
 })
 
 test('Can pass own getMetrics', async t => {
@@ -48,15 +78,16 @@ test('Can pass own getMetrics', async t => {
   const dummySecret = hypCrypto.randomBytes(32)
 
   const dht = new HyperDHT({ bootstrap })
+
   const scraperSwarm = new Hyperswarm({ bootstrap })
   const scraperPubKey = scraperSwarm.keyPair.publicKey
   const getMetrics = () => 'Some metrics'
-  const dhtPromClient = new DhtPromClient(dht, getMetrics, scraperPubKey, 'dummy-alias', dummySecret, { bootstrap })
+  const dhtPromClient = new DhtPromClient(dht, getMetrics, scraperPubKey, 'dummy-alias', dummySecret)
   await dhtPromClient.ready()
 
   const scraper = await setupScraper(t, scraperSwarm, dhtPromClient)
 
-  const res = await scraper.lookup()
+  const res = await scraper.requestMetrics()
   t.is(res.success, true, 'Success is true')
 
   const metrics = res.metrics
@@ -71,32 +102,76 @@ test('Can pass own getMetrics', async t => {
   await testnet.destroy()
 })
 
+test('Scraper can timeout', async t => {
+  const testnet = await createTestnet()
+  const bootstrap = testnet.bootstrap
+
+  const dummySecret = hypCrypto.randomBytes(32)
+
+  const dht = new HyperDHT({ bootstrap })
+
+  const scraperSwarm = new Hyperswarm({ bootstrap })
+  const scraperPubKey = scraperSwarm.keyPair.publicKey
+  const getMetrics = async () => {
+    await new Promise(resolve => setTimeout(resolve, 250))
+    return 'late reply'
+  }
+  const dhtPromClient = new DhtPromClient(dht, getMetrics, scraperPubKey, 'dummy-alias', dummySecret)
+  await dhtPromClient.ready()
+
+  const scraper = await setupScraper(
+    t,
+    scraperSwarm,
+    dhtPromClient,
+    { requestTimeoutMs: 50 }
+  )
+
+  await t.exception(
+    async () => scraper.requestMetrics(),
+    /TIMEOUT_EXCEEDED/,
+    'Timeout error'
+  )
+
+  await scraperSwarm.destroy()
+  await dhtPromClient.close()
+  await testnet.destroy()
+})
+
 test('Other clients cannot get metrics', async t => {
-  t.plan(2)
+  t.plan(3)
 
   const { dhtPromClient, bootstrap } = await setup(t)
+
+  const infoMessages = []
+  dhtPromClient.registerLogger({
+    info: msg => {
+      infoMessages.push(msg)
+    }
+  })
 
   await dhtPromClient.ready()
 
   const otherSwarm = new Hyperswarm({ bootstrap })
 
-  dhtPromClient.on('firewall-block', async ({ remotePublicKey }) => {
+  dhtPromClient.on('firewall-block', async ({ payload, remotePublicKey, address }) => {
     t.alike(
       remotePublicKey,
       otherSwarm.keyPair.publicKey,
       'Firewall blocked the request'
     )
-
+    console.log(payload, address)
     await otherSwarm.destroy()
   })
 
   const scraper = await setupScraper(t, otherSwarm, dhtPromClient)
 
   await t.exception(
-    async () => scraper.lookup(),
+    async () => scraper.requestMetrics(),
     /Not connected/,
     'Client cannot connect'
   )
+
+  t.ok(infoMessages[2].includes('Firewall blocked unauthorised connection attempt from'), 'firewall-block log')
 })
 
 test('client regularly re-registers itself', async t => {
@@ -104,7 +179,7 @@ test('client regularly re-registers itself', async t => {
 
   const { dhtPromClient } = await setup(t, { registerIntervalMs: 200 })
   dhtPromClient.aliasClient.on(
-    'register-alias-attempt',
+    'alias-attempt',
     ({ alias, targetKey, hostname, service }) => {
       t.is(alias, 'dummy-alias', 'correct alias')
       t.alike(targetKey, dhtPromClient.publicKey, 'correct key')
@@ -127,8 +202,16 @@ test('client regularly re-registers itself', async t => {
 })
 
 test('Error handling when getting metrics throws', async t => {
-  t.plan(4)
+  t.plan(5)
   const { dhtPromClient, scraperSwarm } = await setup(t)
+
+  const infoMessages = []
+  dhtPromClient.registerLogger({
+    info: msg => {
+      infoMessages.push(msg)
+    },
+    debug: () => {}
+  })
 
   new promClient.Gauge({ // eslint-disable-line no-new
     name: 'broken_metric',
@@ -152,7 +235,7 @@ test('Error handling when getting metrics throws', async t => {
 
   const scraper = await setupScraper(t, scraperSwarm, dhtPromClient)
 
-  const res = await scraper.lookup()
+  const res = await scraper.requestMetrics()
   t.is(res.success, false, 'no success on error')
 
   const errorMessage = res.errorMessage
@@ -161,6 +244,68 @@ test('Error handling when getting metrics throws', async t => {
     `Failed to obtain metrics (uid ${reqUid})`,
     'Expected error message (no inside info)'
   )
+
+  t.ok(infoMessages[3].includes('Prom client failed to process metrics request'), 'metrics-error log')
+})
+
+test('scrape with different versions', async t => {
+  const { dhtPromClient, scraperSwarm } = await setup(t)
+
+  await dhtPromClient.ready()
+
+  const scraper = await setupScraper(t, scraperSwarm, dhtPromClient)
+  await scraper.ready()
+  // const res = await scraper.requestMetrics({ major: 1000 })
+  // console.log(res)
+
+  await t.exception(
+    async () => await scraper.requestMetrics({ major: 1000 }),
+    /other major version/,
+    'Cannot use other major version'
+  )
+
+  await t.exception(
+    async () => await scraper.requestMetrics({ minor: 1000 }),
+    /higher minor version/,
+    'Cannot use higher minor version'
+  )
+
+  await scraper.close()
+})
+
+test('Example works (sanity check)', async t => {
+  t.plan(3)
+
+  const exProc = spawn(
+    process.execPath,
+    [EXAMPLE_PATH]
+  )
+
+  // To avoid zombie processes in case there's an error
+  process.on('exit', () => {
+    // TODO: unset this handler on clean run
+    exProc.kill('SIGKILL')
+  })
+
+  exProc.stderr.on('data', d => {
+    console.error(d.toString())
+    t.fail('There should be no stderr')
+  })
+
+  const lines = []
+  const stdoutDec = new NewlineDecoder('utf-8')
+  exProc.stdout.on('data', async d => {
+    for (const line of stdoutDec.push(d)) {
+      lines.push(line)
+    }
+  })
+
+  exProc.on('close', (code) => {
+    const output = lines.join('')
+    t.is(code, 0, 'example process exited cleanly')
+    t.is(output.includes('success: true'), true, 'success metrics result')
+    t.is(output.includes('process_cpu_user_seconds_total'), true, 'sanity check: includes metrics')
+  })
 })
 
 async function setup (t, clientOpts = {}) {
@@ -182,7 +327,7 @@ async function setup (t, clientOpts = {}) {
     'dummy-alias',
     dummySecret,
     'my-service',
-    { ...clientOpts, bootstrap, hostname: 'my-hostname' }
+    { ...clientOpts, hostname: 'my-hostname' }
   )
 
   t.teardown(async () => {
@@ -194,8 +339,8 @@ async function setup (t, clientOpts = {}) {
   return { dhtPromClient, scraperSwarm, bootstrap }
 }
 
-async function setupScraper (t, scraperSwarm, dhtPromClient) {
-  const scraper = new Scraper(scraperSwarm, dhtPromClient.publicKey)
+async function setupScraper (t, scraperSwarm, dhtPromClient, opts = {}) {
+  const scraper = new Scraper(scraperSwarm, dhtPromClient.publicKey, opts)
 
   t.teardown(async () => await scraper.close())
 

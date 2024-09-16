@@ -5,14 +5,15 @@ const RPC = require('protomux-rpc')
 const crypto = require('crypto')
 const safetyCatch = require('safety-catch')
 const idEnc = require('hypercore-id-encoding')
+const HyperDHT = require('hyperdht')
 
-const { MetricsReplyEnc } = require('./lib/encodings')
+const { MetricsReplyEnc, MetricsReqEnc } = require('./lib/encodings')
 const AliasRpcClient = require('dht-prom-alias-rpc/client')
 
 const PROTOCOL_NAME = 'prometheus-metrics'
 
 class DhtPromClient extends ReadyResource {
-  constructor (dht, getMetrics, scraperPublicKey, alias, scraperSecret, service, { keyPair, bootstrap, registerIntervalMs = 1000 * 60 * 60, hostname = os.hostname() } = {}) {
+  constructor (dht, getMetrics, scraperPublicKey, alias, scraperSecret, service, { keyPair, registerIntervalMs = 1000 * 60 * 60, hostname = os.hostname() } = {}) {
     super()
 
     scraperPublicKey = idEnc.decode(scraperPublicKey)
@@ -29,7 +30,10 @@ class DhtPromClient extends ReadyResource {
     this.service = service
     this.hostname = hostname
 
-    this.keyPair = keyPair || this.dht.defaultKeyPair
+    // It should not use the same keyPair for its server
+    // as for the client connections
+    // TODO: figure out the exact issue caused by this
+    this.serverKeyPair = keyPair || HyperDHT.keyPair()
 
     const connectionKeepAlive = 5000
     const firewall = this._firewall.bind(this)
@@ -41,7 +45,7 @@ class DhtPromClient extends ReadyResource {
     this.aliasClient = new AliasRpcClient(
       this.scraperPublicKey,
       scraperSecret,
-      { bootstrap }
+      this.dht
     )
 
     this.registerIntervalMs = registerIntervalMs
@@ -49,7 +53,7 @@ class DhtPromClient extends ReadyResource {
   }
 
   get publicKey () {
-    return this.keyPair.publicKey
+    return this.serverKeyPair.publicKey
   }
 
   // Never throws
@@ -67,9 +71,8 @@ class DhtPromClient extends ReadyResource {
   }
 
   async _open () {
-    await this.server.listen(this.keyPair)
+    await this.server.listen(this.serverKeyPair)
 
-    await this.aliasClient.ready()
     this._registerInterval = setInterval(
       this._tryRegisterAlias.bind(this), this.registerIntervalMs
     )
@@ -80,14 +83,14 @@ class DhtPromClient extends ReadyResource {
   async _close () {
     if (this._registerInterval) clearInterval(this._registerInterval)
     await this.dht.destroy()
-    await this.aliasClient.close()
   }
 
-  _onconnection (socket, peerInfo) {
+  _onconnection (socket) {
     const uid = crypto.randomUUID()
     const remotePublicKey = socket.remotePublicKey
+    const remoteAddress = `${socket.rawStream.remoteHost}:${socket.rawStream.remotePort}`
 
-    this.emit('connection-open', { uid, peerInfo, remotePublicKey })
+    this.emit('connection-open', { uid, remoteAddress, remotePublicKey })
 
     socket.on('error', (error) => {
       safetyCatch(error)
@@ -98,30 +101,31 @@ class DhtPromClient extends ReadyResource {
     })
 
     const rpc = new RPC(socket, { protocol: PROTOCOL_NAME })
-    rpc.on('close', () => { // Destroy socket to force a reconnect
-      // TODO: can just be socket.end() (and we don't emit an error)
-
+    rpc.on('close', () => {
       // End stream with error (rpc closing is unexpected)
       socket.on('finish', () => socket.destroy(new Error('RPC closed')))
 
-      // Cleanly close write side (flushes all)
+      // Cleanly close write side (flushes all), so we re-open
       socket.end()
     })
 
     rpc.respond(
       'metrics',
-      { responseEncoding: MetricsReplyEnc },
+      {
+        requestEncoding: MetricsReqEnc,
+        responseEncoding: MetricsReplyEnc
+      },
       async () => {
         this.emit('metrics-request', { uid, remotePublicKey })
         try {
           const metrics = await this.getMetrics()
-          this.emit('metrics-success', { uid })
+          this.emit('metrics-success', { uid, remotePublicKey })
           return {
             success: true,
             metrics
           }
         } catch (error) {
-          this.emit('metrics-error', { error, uid })
+          this.emit('metrics-error', { error, remotePublicKey, uid })
           return {
             success: false,
             errorMessage: `Failed to obtain metrics (uid ${uid})`
@@ -138,10 +142,47 @@ class DhtPromClient extends ReadyResource {
     )
 
     if (!isScraper) {
-      this.emit('firewall-block', { remotePublicKey, payload, address })
+      const { host, port } = address
+      this.emit('firewall-block', { remotePublicKey, payload, address: `${host}:${port}` })
     }
 
     return !isScraper
+  }
+
+  registerLogger (logger) {
+    this.on('firewall-block', ({ remotePublicKey, address }) => {
+      logger.info(`Firewall blocked unauthorised connection attempt from ${address} (public key: ${idEnc.normalize(remotePublicKey)})`)
+    })
+
+    this.aliasClient.on('alias-attempt', ({ alias, targetKey, hostname, service }) => {
+      logger.info(`Prom client attempting to register ${this.alias}->${idEnc.normalize(targetKey)} for service ${service} at host ${hostname}}`)
+    })
+    this.on('register-alias-success', ({ updated }) => {
+      logger.info(`Prom client successfully registered alias ${this.alias} (updated: ${updated})`)
+    })
+    this.on('register-alias-error', (error) => {
+      logger.info(`Prom client failed to register alias ${error.stack}`)
+    })
+
+    this.on('connection-open', ({ uid, remotePublicKey }) => {
+      logger.info(`Prom client opened connection to ${idEnc.normalize(remotePublicKey)} (uid: ${uid})`)
+    })
+    this.on('connection-close', ({ uid, remotePublicKey }) => {
+      logger.info(`Prom client closed connection to ${idEnc.normalize(remotePublicKey)} (uid: ${uid})`)
+    })
+    this.on('connection-error', ({ error, uid, remotePublicKey }) => {
+      logger.info(`Prom client error on connection to ${idEnc.normalize(remotePublicKey)}: ${error.stack} (uid: ${uid})`)
+    })
+
+    this.on('metrics-request', ({ uid, remotePublicKey }) => {
+      logger.debug(`Prom client received metrics request from ${idEnc.normalize(remotePublicKey)} (uid: ${uid})`)
+    })
+    this.on('metrics-success', ({ uid }) => {
+      logger.debug(`Prom client successfully processed metrics request (uid: ${uid})`)
+    })
+    this.on('metrics-error', ({ uid, error }) => {
+      logger.info(`Prom client failed to process metrics request: ${error} (uid: ${uid})`)
+    })
   }
 }
 
