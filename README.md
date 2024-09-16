@@ -14,15 +14,21 @@ See [./example](./example)
 
 ## Architecture
 
-A DHT Prom Client exposes a DHT server, and registers it with the scraper on startup. It then regularly reregisters itself. It uses a secret shared with the scraper to authenticate itself.
+A DHT Prom Client exposes a DHT server, and registers it with the scraper on startup. It then regularly reregisters itself. A shared secret is used for authentication.
 
-Registering entails mapping the metrics server's public key to an alias. The alias should uniquely identify the client to the scraper. Registering also includes the hostname and service name as metadata, to facilitate combining related clients when analysing the collected metrics. These connections are ephemeral: they get closed after succeeding (or failing).
+Registering entails mapping the metrics server's public key to an alias. The alias should uniquely identify the client to the scraper.
 
-The scraper then opens a connection to the client's metrics server. The client authenticates the server based on its public key. These connections are kept open, since scrape requests are frequent. Whenever the connection is lost, regular attempts are made to re-open the connection.
+Registering includes the hostname and service name as metadata, to facilitate combining related clients when analysing the collected metrics.
 
-The scraper forwards all /metrics request to the client's metrics server. The client either returns the metrics, or an error message.
+Alias-register connections are ephemeral: they close after succeeding (or failing).
 
-Currently, each client only supports one scraper, but it would be straightforward to extend this to multiple scrapers.
+Once the alias is registered, the scraper opens a connection to the client's metrics server. The client authenticates the server based on its public key.
+
+Scraper connections are kept open, since scrape requests are frequent. Whenever the connection is lost, regular attempts are made to re-open the connection (leveraging the hyperswarm reconnect logic).
+
+The DHT-prom client either returns its metrics, or an error message.
+
+Currently, each client only supports getting scraped by one scraper, but it would be straightforward to extend this to multiple scrapers.
 
 ## DHT Prom Client API
 
@@ -34,7 +40,7 @@ Create a new DHT Prom client.
 - `promClient|getMetrics` is either a [prom-client](https://github.com/siimon/prom-client) instance, or a function which returns metrics in Prometheus format.
 -  `scraperPublicKey` is the public key of the [DHT Prometheus](https://github.com/HDegroote/dht-prometheus) instance which will scrape us, in any format (hex, z32 or binary)
 - `alias` is the alias we wish to register with the scraper. Each alias should be unique for that scraper (the previous entry gets overwritten)
-- `scraperSecret` is the secret with which we prove our right to register our alias with the scraper. It is a 64-byte buffer (or equivalent hex/z32 string)
+- `scraperSecret` is the secret with which we prove our right to register our alias with the scraper. It is a 32-byte buffer (or equivalent hex/z32 string)
 - `service` is the name of the service of which we are an instance (useful for grouping processes in a Prometheus dashboard)
 
 `opts` include:
@@ -157,10 +163,10 @@ Emitted whenever a new connection to the client is opened.
 
 Emitted whenever a connection to the client is closed.
 
-#### `scraper.on('connection-close', { uid, remotePublicKey, remoteAddress })`
-
-Emitted whenever a connection to the client is closed.
-
 #### `scraper.on('connection-error', { error, uid, remotePublicKey, remoteAddress })`
 
 Emitted whenever a connection to the client errors. Errors are expected, and to not imply a need for action, but logging them can be useful.
+
+#### `scraper.on('connection-ignore', { uid, remotePublicKey, remoteAddress })`
+
+Emitted whenever a connection is ignored because it is not from the scraper. Since this event triggers every time the swarm opens a connection to another peer, it is only useful for debugging
