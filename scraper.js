@@ -1,5 +1,6 @@
+const { EventEmitter } = require('events')
 const crypto = require('crypto')
-const ReadyResource = require('ready-resource')
+
 const RPC = require('protomux-rpc')
 const { MetricsReplyEnc, MetricsReqEnc } = require('./lib/encodings')
 const b4a = require('b4a')
@@ -8,7 +9,7 @@ const safetyCatch = require('safety-catch')
 
 const PROTOCOL_NAME = 'prometheus-metrics'
 
-class DhtPromScraper extends ReadyResource {
+class DhtPromScraper extends EventEmitter {
   constructor (swarm, promClientPubKey, { requestTimeoutMs = 5000 } = {}) {
     super()
 
@@ -23,21 +24,35 @@ class DhtPromScraper extends ReadyResource {
     this._currentConnUid = null
 
     this._boundConnectionHandler = this._connectionHandler.bind(this)
+
+    this._opened = false
+    this._closed = false
   }
 
-  _open () {
+  // sync open and close, so no ready resource
+  ready () {
+    if (this._opened) return
+
     this.swarm.on('connection', this._boundConnectionHandler)
 
     // Handles reconnects/suspends
     this.swarm.joinPeer(this.targetKey)
+
+    this._opened = true
   }
 
-  _close () {
+  close () {
+    // Fine to run the close code if we never opened,
+    // so we don't guard against that
+    if (this._closed) return
+
     this.swarm.off('connection', this._boundConnectionHandler)
     this.swarm.leavePeer(this.targetKey)
 
     if (this.rpc) this.rpc.destroy()
     if (this.socket) this.socket.destroy()
+
+    this._closed = true
   }
 
   _connectionHandler (socket) {
