@@ -39,5 +39,10 @@
     "prom-client": "^15.1.2",
     "safety-catch": "^1.0.2",
     "standard": "^17.1.0"
-  }
+  },
+  "files": [
+    "index.js",
+    "scraper.js",
+    "lib/**.js"
+  ]
 }
