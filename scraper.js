@@ -25,26 +25,26 @@ class DhtPromScraper extends EventEmitter {
 
     this._boundConnectionHandler = this._connectionHandler.bind(this)
 
-    this._opened = false
-    this._closed = false
+    this.opened = false
+    this.closed = false
   }
 
   // sync open and close, so no ready resource
   ready () {
-    if (this._opened) return
+    if (this.opened) return
 
     this.swarm.on('connection', this._boundConnectionHandler)
 
     // Handles reconnects/suspends
     this.swarm.joinPeer(this.targetKey)
 
-    this._opened = true
+    this.opened = true
   }
 
   close () {
     // Fine to run the close code if we never opened,
     // so we don't guard against that
-    if (this._closed) return
+    if (this.closed) return
 
     this.swarm.off('connection', this._boundConnectionHandler)
     this.swarm.leavePeer(this.targetKey)
@@ -52,7 +52,7 @@ class DhtPromScraper extends EventEmitter {
     if (this.rpc) this.rpc.destroy()
     if (this.socket) this.socket.destroy()
 
-    this._closed = true
+    this.closed = true
   }
 
   _connectionHandler (socket) {
