@@ -174,12 +174,14 @@ class DhtPromClient extends ReadyResource {
       logger.info(`Prom client error on connection to ${idEnc.normalize(remotePublicKey)}: ${error.stack} (uid: ${uid})`)
     })
 
-    this.on('metrics-request', ({ uid, remotePublicKey }) => {
-      logger.debug(`Prom client received metrics request from ${idEnc.normalize(remotePublicKey)} (uid: ${uid})`)
-    })
-    this.on('metrics-success', ({ uid }) => {
-      logger.debug(`Prom client successfully processed metrics request (uid: ${uid})`)
-    })
+    if (logger.level === 'debug') {
+      this.on('metrics-request', ({ uid, remotePublicKey }) => {
+        logger.debug(`Prom client received metrics request from ${idEnc.normalize(remotePublicKey)} (uid: ${uid})`)
+      })
+      this.on('metrics-success', ({ uid }) => {
+        logger.debug(`Prom client successfully processed metrics request (uid: ${uid})`)
+      })
+    }
     this.on('metrics-error', ({ uid, error }) => {
       logger.info(`Prom client failed to process metrics request: ${error} (uid: ${uid})`)
     })

@@ -26,7 +26,8 @@ test('Scraper can get metrics', async t => {
     },
     debug: msg => {
       debugMessages.push(msg)
-    }
+    },
+    level: 'debug'
   })
 
   let reqUid = null
