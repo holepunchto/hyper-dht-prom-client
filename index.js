@@ -21,6 +21,7 @@ class DhtPromClient extends ReadyResource {
     this.dht = dht
 
     const isPromClient = getMetrics.register?.metrics != null
+    this.promClient = isPromClient ? getMetrics : null
     this.getMetrics = isPromClient
       ? getMetrics.register.metrics.bind(getMetrics.register)
       : getMetrics

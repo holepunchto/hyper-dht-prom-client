@@ -51,6 +51,10 @@ Create a new DHT Prom client.
 
 The public key where the metrics server listens.
 
+#### `dhtPromClient.promClient`
+
+The prom-client used, or null if a function was passed in to collect the metrics.
+
 #### `dhtPromClient.ready()`
 
 Start listening on the metrics server, and start registering the alias with the scraper.
