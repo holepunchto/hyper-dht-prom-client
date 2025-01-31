@@ -256,20 +256,22 @@ test('scrape with different versions', async t => {
 
   const scraper = await setupScraper(t, scraperSwarm, dhtPromClient)
   await scraper.ready()
-  // const res = await scraper.requestMetrics({ major: 1000 })
-  // console.log(res)
 
-  await t.exception(
-    async () => await scraper.requestMetrics({ major: 1000 }),
-    /other major version/,
-    'Cannot use other major version'
-  )
+  try {
+    await scraper.requestMetrics({ major: 1000 })
+    t.fail()
+  } catch (e) {
+    t.is(e.code, 'DECODE_ERROR')
+    t.is(e.cause.message.includes('Cannot decode RegisterRequest of other major version'), true)
+  }
 
-  await t.exception(
-    async () => await scraper.requestMetrics({ minor: 1000 }),
-    /higher minor version/,
-    'Cannot use higher minor version'
-  )
+  try {
+    await scraper.requestMetrics({ minor: 1000 })
+    t.fail()
+  } catch (e) {
+    t.is(e.code, 'DECODE_ERROR')
+    t.is(e.cause.message.includes('Cannot decode RegisterRequest of higher minor version'), true)
+  }
 
   await scraper.close()
 })
