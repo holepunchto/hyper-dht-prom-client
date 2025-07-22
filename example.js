@@ -1,22 +1,24 @@
 const HyperDHT = require('hyperdht')
 const createTestnet = require('hyperdht/testnet')
 const promClient = require('prom-client')
-const Hyperswarm = require('hyperswarm')
 const hypCrypto = require('hypercore-crypto')
 
 const DhtPromClient = require('.') // require('dht-prom-client')
 const Scraper = require('./scraper') // require('dht-prom-client/scraper')
+const ProtomuxRpcClient = require('protomux-rpc-client')
 
 async function main () {
   // To not rely on the public DHT
   const testnet = await createTestnet()
   const bootstrap = testnet.bootstrap
 
-  const scraperSwarm = new Hyperswarm({ bootstrap })
-  const scraperPubKey = scraperSwarm.keyPair.publicKey
+  const scraperDht = new HyperDHT({ bootstrap })
+  const scraperRpcClient = new ProtomuxRpcClient(scraperDht)
+  const scraperPubKey = scraperDht.defaultKeyPair.publicKey
 
   promClient.collectDefaultMetrics() // So we have something to scrape
   const dht = new HyperDHT({ bootstrap })
+  const rpcClient = new ProtomuxRpcClient(dht)
 
   // Used to register the alias, which is not included in this demo
   // (see dht-prometheus for that)
@@ -24,6 +26,7 @@ async function main () {
 
   const dhtPromClient = new DhtPromClient(
     dht,
+    rpcClient,
     promClient,
     scraperPubKey,
     'dummy-alias',
@@ -32,18 +35,17 @@ async function main () {
   )
 
   await dhtPromClient.ready() // Listening for 'metrics' requests
+  await new Promise(resolve => setTimeout(resolve, 500)) // Flush, for race conditions
 
-  const scraper = new Scraper(scraperSwarm, dhtPromClient.publicKey)
-
-  await scraper.ready()
-  await scraper.swarm.flush() // For race conditions
-
+  const scraper = new Scraper(scraperRpcClient, dhtPromClient.publicKey)
   const res = await scraper.requestMetrics()
 
   console.log(res)
 
-  await scraper.close()
-  await scraperSwarm.destroy()
+  await rpcClient.close()
+  await scraperRpcClient.close()
+  await dht.destroy()
+  await scraperDht.destroy()
   await dhtPromClient.close()
   await testnet.destroy()
   console.log('done')

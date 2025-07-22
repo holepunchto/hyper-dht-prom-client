@@ -123,19 +123,12 @@ Create a new scraper.
 - `promClientPubKey` is the public key of a metrics server exposed by a DHT Prom Client
 - `opts` include `requestTimeoutMs`: the amount of ms before a request times out (default 5000)
 
-
-
-#### `scraper.ready()`
-
-Instructs the scraper to connect to the client. It it cannot connect or gets disconnected at some point, it will continuously attempt to reconnect.
-
-#### `scraper.close()`
-
-Instructs the scraper to disconnect from the client.
-
-#### `const result = scraper.requestMetrics()`
+#### `const result = scraper.requestMetrics(opts)`
 
 Requests the metrics from the client.
+
+`opts` include:
+- `timeout`: duration in ms before the request times out
 
 Throws is the client is unavailable, or if some other connection or protocol error occurs.
 
@@ -154,23 +147,3 @@ Otherwise, returns either a success or a failure response:
   errorMessage: str
 }
 ```
-
-### Events
-
-All events include a unique id `uid`, the public key of the remote peer (`remotePublicKey`) and their `ip:port` address (`remoteAddress`).
-
-#### `scraper.on('connection-open', { uid, remotePublicKey, remoteAddress })`
-
-Emitted whenever a new connection to the client is opened.
-
-#### `scraper.on('connection-close', { uid, remotePublicKey, remoteAddress })`
-
-Emitted whenever a connection to the client is closed.
-
-#### `scraper.on('connection-error', { error, uid, remotePublicKey, remoteAddress })`
-
-Emitted whenever a connection to the client errors. Errors are expected, and to not imply a need for action, but logging them can be useful.
-
-#### `scraper.on('connection-ignore', { uid, remotePublicKey, remoteAddress })`
-
-Emitted whenever a connection is ignored because it is not from the scraper. Since this event triggers every time the swarm opens a connection to another peer, it is only useful for debugging

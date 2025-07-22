@@ -5,18 +5,18 @@ const test = require('brittle')
 const promClient = require('prom-client')
 const createTestnet = require('hyperdht/testnet')
 const HyperDHT = require('hyperdht')
-const Hyperswarm = require('hyperswarm')
 const hypCrypto = require('hypercore-crypto')
 const NewlineDecoder = require('newline-decoder')
 
 const DhtPromClient = require('./index')
 const Scraper = require('./scraper')
+const ProtomuxRpcClient = require('protomux-rpc-client')
 
 const EXAMPLE_PATH = path.join(__dirname, 'example.js')
 
 test('Scraper can get metrics', async t => {
-  t.plan(11)
-  const { dhtPromClient, scraperSwarm } = await setup(t)
+  t.plan(10)
+  const { dhtPromClient, scraperProtomuxRpcClient, scraperPubKey } = await setup(t)
 
   const infoMessages = []
   const debugMessages = []
@@ -35,7 +35,7 @@ test('Scraper can get metrics', async t => {
     reqUid = uid
     t.alike(
       remotePublicKey,
-      scraperSwarm.keyPair.publicKey,
+      scraperPubKey,
       'metrics-request emitted'
     )
   })
@@ -46,7 +46,7 @@ test('Scraper can get metrics', async t => {
 
   await dhtPromClient.ready()
 
-  const scraper = await setupScraper(t, scraperSwarm, dhtPromClient)
+  const scraper = await setupScraper(t, scraperProtomuxRpcClient, dhtPromClient)
 
   const res = await scraper.requestMetrics()
   t.is(res.success, true, 'Success is true')
@@ -60,12 +60,11 @@ test('Scraper can get metrics', async t => {
 
   // log messages (subset hit in this test)
 
-  t.is(infoMessages.length, 3, 'no unexpected info messages')
+  // Note: if the test takes very long we might see the 'failed to register alias' message
+  t.is(infoMessages.length, 2, 'no unexpected info messages')
   t.ok(infoMessages[0].includes('Prom client attempting to register dummy-alias'), 'alias-attempt log')
 
-  // Since there is no alias service, it errors
-  t.ok(infoMessages[1].includes('Prom client failed to register alias Error'), 'alias-error log')
-  t.ok(infoMessages[2].includes('Prom client opened connection to'), 'connection-open log')
+  t.ok(infoMessages[1].includes('Prom client opened connection to'), 'connection-open log')
 
   t.is(debugMessages.length, 2, 'No unexpected messages')
   t.ok(debugMessages[0].includes('Prom client received metrics request from'), 'metric req received log')
@@ -73,20 +72,19 @@ test('Scraper can get metrics', async t => {
 })
 
 test('Can pass own getMetrics', async t => {
-  const testnet = await createTestnet()
-  const bootstrap = testnet.bootstrap
+  const bootstrap = await setupTestnet(t)
 
   const dummySecret = hypCrypto.randomBytes(32)
 
   const dht = new HyperDHT({ bootstrap })
+  const rpcClient = new ProtomuxRpcClient(dht, { requestTimeout: 1000, backoffValues: [100, 250, 500] })
 
-  const scraperSwarm = new Hyperswarm({ bootstrap })
-  const scraperPubKey = scraperSwarm.keyPair.publicKey
+  const { scraperProtomuxRpcClient, scraperPubKey } = await setupscraperRpcClient(t, bootstrap)
   const getMetrics = () => 'Some metrics'
-  const dhtPromClient = new DhtPromClient(dht, getMetrics, scraperPubKey, 'dummy-alias', dummySecret)
+  const dhtPromClient = new DhtPromClient(dht, rpcClient, getMetrics, scraperPubKey, 'dummy-alias', dummySecret)
   await dhtPromClient.ready()
 
-  const scraper = await setupScraper(t, scraperSwarm, dhtPromClient)
+  const scraper = await setupScraper(t, scraperProtomuxRpcClient, dhtPromClient)
 
   const res = await scraper.requestMetrics()
   t.is(res.success, true, 'Success is true')
@@ -98,44 +96,41 @@ test('Can pass own getMetrics', async t => {
     'Got prometheus metrics'
   )
 
-  await scraperSwarm.destroy()
+  await scraperProtomuxRpcClient.close()
+  await rpcClient.close()
   await dhtPromClient.close()
-  await testnet.destroy()
 })
 
 test('Scraper can timeout', async t => {
-  const testnet = await createTestnet()
-  const bootstrap = testnet.bootstrap
+  const bootstrap = await setupTestnet(t)
 
   const dummySecret = hypCrypto.randomBytes(32)
 
   const dht = new HyperDHT({ bootstrap })
+  const rpcClient = new ProtomuxRpcClient(dht, { requestTimeout: 1000, backoffValues: [100, 250, 500] })
 
-  const scraperSwarm = new Hyperswarm({ bootstrap })
-  const scraperPubKey = scraperSwarm.keyPair.publicKey
+  const { scraperProtomuxRpcClient, scraperPubKey } = await setupscraperRpcClient(t, bootstrap)
   const getMetrics = async () => {
     await new Promise(resolve => setTimeout(resolve, 250))
     return 'late reply'
   }
-  const dhtPromClient = new DhtPromClient(dht, getMetrics, scraperPubKey, 'dummy-alias', dummySecret)
+  const dhtPromClient = new DhtPromClient(dht, rpcClient, getMetrics, scraperPubKey, 'dummy-alias', dummySecret)
   await dhtPromClient.ready()
 
   const scraper = await setupScraper(
     t,
-    scraperSwarm,
-    dhtPromClient,
-    { requestTimeoutMs: 50 }
+    scraperProtomuxRpcClient,
+    dhtPromClient
   )
 
   await t.exception(
-    async () => scraper.requestMetrics(),
-    /TIMEOUT_EXCEEDED/,
+    async () => scraper.requestMetrics({ timeout: 50 }),
+    /REQUEST_TIMEOUT/,
     'Timeout error'
   )
 
-  await scraperSwarm.destroy()
   await dhtPromClient.close()
-  await testnet.destroy()
+  await rpcClient.close()
 })
 
 test('Other clients cannot get metrics', async t => {
@@ -152,36 +147,36 @@ test('Other clients cannot get metrics', async t => {
 
   await dhtPromClient.ready()
 
-  const otherSwarm = new Hyperswarm({ bootstrap })
+  const { scraperProtomuxRpcClient, scraperPubKey: otherPubKey } = await setupscraperRpcClient(t, bootstrap)
 
   dhtPromClient.on('firewall-block', async ({ payload, remotePublicKey, address }) => {
     t.alike(
       remotePublicKey,
-      otherSwarm.keyPair.publicKey,
+      otherPubKey,
       'Firewall blocked the request'
     )
-    console.log(payload, address)
-    await otherSwarm.destroy()
   })
 
-  const scraper = await setupScraper(t, otherSwarm, dhtPromClient)
+  const scraper = await setupScraper(t, scraperProtomuxRpcClient, dhtPromClient)
 
   await t.exception(
     async () => scraper.requestMetrics(),
-    /Not connected/,
+    /REQUEST_TIMEOUT/,
     'Client cannot connect'
   )
 
-  t.ok(infoMessages[2].includes('Firewall blocked unauthorised connection attempt from'), 'firewall-block log')
+  t.ok(infoMessages[1].includes('Firewall blocked unauthorised connection attempt from'), 'firewall-block log')
 })
 
 test('client regularly re-registers itself', async t => {
   t.plan(10)
 
+  let nrAttempts = 0
   const { dhtPromClient } = await setup(t, { registerIntervalMs: 200 })
   dhtPromClient.aliasClient.on(
     'alias-attempt',
     ({ alias, targetKey, hostname, service }) => {
+      if (nrAttempts++ >= 2) return
       t.is(alias, 'dummy-alias', 'correct alias')
       t.alike(targetKey, dhtPromClient.publicKey, 'correct key')
       t.is(hostname, 'my-hostname', 'correct hostname')
@@ -189,11 +184,11 @@ test('client regularly re-registers itself', async t => {
     }
   )
 
-  let nrRegisterAttempts = 0
+  let nrRegisterErrors = 0
   dhtPromClient.on('register-alias-error', () => {
-    nrRegisterAttempts++
-    if (nrRegisterAttempts === 1) t.pass('init register (sanity check)')
-    else if (nrRegisterAttempts === 2) {
+    nrRegisterErrors++
+    if (nrRegisterErrors === 1) t.pass('init register (sanity check)')
+    else if (nrRegisterErrors === 2) {
       t.pass('re-registered')
       t.end()
     }
@@ -204,7 +199,7 @@ test('client regularly re-registers itself', async t => {
 
 test('Error handling when getting metrics throws', async t => {
   t.plan(5)
-  const { dhtPromClient, scraperSwarm } = await setup(t)
+  const { dhtPromClient, scraperProtomuxRpcClient } = await setup(t)
 
   const infoMessages = []
   dhtPromClient.registerLogger({
@@ -234,7 +229,7 @@ test('Error handling when getting metrics throws', async t => {
     t.is(error.message, 'I break stuff', 'Correct error on event')
   })
 
-  const scraper = await setupScraper(t, scraperSwarm, dhtPromClient)
+  const scraper = await setupScraper(t, scraperProtomuxRpcClient, dhtPromClient)
 
   const res = await scraper.requestMetrics()
   t.is(res.success, false, 'no success on error')
@@ -246,16 +241,15 @@ test('Error handling when getting metrics throws', async t => {
     'Expected error message (no inside info)'
   )
 
-  t.ok(infoMessages[3].includes('Prom client failed to process metrics request'), 'metrics-error log')
+  t.ok(infoMessages[2].includes('Prom client failed to process metrics request'), 'metrics-error log')
 })
 
 test('scrape with different versions', async t => {
-  const { dhtPromClient, scraperSwarm } = await setup(t)
+  const { dhtPromClient, scraperProtomuxRpcClient } = await setup(t)
 
   await dhtPromClient.ready()
 
-  const scraper = await setupScraper(t, scraperSwarm, dhtPromClient)
-  await scraper.ready()
+  const scraper = await setupScraper(t, scraperProtomuxRpcClient, dhtPromClient)
 
   try {
     await scraper.requestMetrics({ major: 1000 })
@@ -272,8 +266,6 @@ test('scrape with different versions', async t => {
     t.is(e.code, 'DECODE_ERROR')
     t.is(e.cause.message.includes('Cannot decode RegisterRequest of higher minor version'), true)
   }
-
-  await scraper.close()
 })
 
 test('Example works (sanity check)', async t => {
@@ -321,10 +313,13 @@ async function setup (t, clientOpts = {}) {
   const dummySecret = hypCrypto.randomBytes(32)
 
   const dht = new HyperDHT({ bootstrap })
-  const scraperSwarm = new Hyperswarm({ bootstrap })
-  const scraperPubKey = scraperSwarm.keyPair.publicKey
+  const scraperDht = new HyperDHT({ bootstrap })
+  const scraperProtomuxRpcClient = new ProtomuxRpcClient(scraperDht, { requestTimeout: 1000, backoffValues: [100, 250, 500] })
+  const scraperPubKey = scraperDht.defaultKeyPair.publicKey
+  const protomuxRpcClient = new ProtomuxRpcClient(dht, { requestTimeout: 1000, backoffValues: [100, 250, 500] })
   const dhtPromClient = new DhtPromClient(
     dht,
+    protomuxRpcClient,
     promClient,
     scraperPubKey,
     'dummy-alias',
@@ -335,20 +330,37 @@ async function setup (t, clientOpts = {}) {
 
   t.teardown(async () => {
     await dhtPromClient.close()
-    await scraperSwarm.destroy()
+    await protomuxRpcClient.close()
+    await scraperProtomuxRpcClient.close()
+    await scraperDht.destroy()
     await testnet.destroy()
   })
 
-  return { dhtPromClient, scraperSwarm, bootstrap }
+  return { dhtPromClient, scraperPubKey, scraperProtomuxRpcClient, bootstrap }
 }
 
-async function setupScraper (t, scraperSwarm, dhtPromClient, opts = {}) {
-  const scraper = new Scraper(scraperSwarm, dhtPromClient.publicKey, opts)
-
-  t.teardown(async () => await scraper.close())
-
-  await scraper.ready()
-  await scraper.swarm.flush() // For race conditions
-
+async function setupScraper (t, protomuxRpcClient, dhtPromClient, opts = {}) {
+  const scraper = new Scraper(protomuxRpcClient, dhtPromClient.publicKey, opts)
+  await new Promise(resolve => setTimeout(resolve, 250)) // scraper.swarm.flush() // For race conditions
   return scraper
+}
+
+async function setupscraperRpcClient (t, bootstrap) {
+  const scraperDht = new HyperDHT({ bootstrap })
+  const scraperProtomuxRpcClient = new ProtomuxRpcClient(scraperDht, { requestTimeout: 1000, backoffValues: [100, 250, 500] })
+  t.teardown(async () => {
+    await scraperProtomuxRpcClient.close()
+    await scraperDht.destroy()
+  })
+
+  const scraperPubKey = scraperDht.defaultKeyPair.publicKey
+  return { scraperProtomuxRpcClient, scraperPubKey }
+}
+
+async function setupTestnet (t) {
+  const testnet = await createTestnet()
+  t.teardown(async () => {
+    await testnet.destroy()
+  }, { order: 9999999 })
+  return testnet.bootstrap
 }
