@@ -46,6 +46,7 @@ Create a new DHT Prom client.
 `opts` include:
 - `registerIntervalMs`: how frequently you wish to re-register yourself with the scraper (in ms). It should be less than the `entryExpiryMs` option of DHT Prometheus. Defaults to 1 hour.
 - `hostname`: the hostname where you run. Defaults to `os.hostname()`. Useful for filtering processes in a Prometheus dashboard.
+- `protomuxRpcClient`: a [Protomux-RPC-client](https://github.com/holepunchto/protomux-rpc-client) instance. Creates a new one by default. Its lifecycle is managed by the DHT Prom Client.
 
 #### `dhtPromClient.publicKey`
 

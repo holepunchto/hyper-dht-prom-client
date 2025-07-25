@@ -18,7 +18,6 @@ async function main () {
 
   promClient.collectDefaultMetrics() // So we have something to scrape
   const dht = new HyperDHT({ bootstrap })
-  const rpcClient = new ProtomuxRpcClient(dht)
 
   // Used to register the alias, which is not included in this demo
   // (see dht-prometheus for that)
@@ -26,7 +25,6 @@ async function main () {
 
   const dhtPromClient = new DhtPromClient(
     dht,
-    rpcClient,
     promClient,
     scraperPubKey,
     'dummy-alias',
@@ -42,7 +40,6 @@ async function main () {
 
   console.log(res)
 
-  await rpcClient.close()
   await scraperRpcClient.close()
   await dht.destroy()
   await scraperDht.destroy()

@@ -77,11 +77,11 @@ test('Can pass own getMetrics', async t => {
   const dummySecret = hypCrypto.randomBytes(32)
 
   const dht = new HyperDHT({ bootstrap })
-  const rpcClient = new ProtomuxRpcClient(dht, { requestTimeout: 1000, backoffValues: [100, 250, 500] })
+  const protomuxRpcClient = new ProtomuxRpcClient(dht, { requestTimeout: 1000, backoffValues: [100, 250, 500] })
 
   const { scraperProtomuxRpcClient, scraperPubKey } = await setupscraperRpcClient(t, bootstrap)
   const getMetrics = () => 'Some metrics'
-  const dhtPromClient = new DhtPromClient(dht, rpcClient, getMetrics, scraperPubKey, 'dummy-alias', dummySecret)
+  const dhtPromClient = new DhtPromClient(dht, getMetrics, scraperPubKey, 'dummy-alias', dummySecret, { protomuxRpcClient })
   await dhtPromClient.ready()
 
   const scraper = await setupScraper(t, scraperProtomuxRpcClient, dhtPromClient)
@@ -97,7 +97,6 @@ test('Can pass own getMetrics', async t => {
   )
 
   await scraperProtomuxRpcClient.close()
-  await rpcClient.close()
   await dhtPromClient.close()
 })
 
@@ -107,14 +106,14 @@ test('Scraper can timeout', async t => {
   const dummySecret = hypCrypto.randomBytes(32)
 
   const dht = new HyperDHT({ bootstrap })
-  const rpcClient = new ProtomuxRpcClient(dht, { requestTimeout: 1000, backoffValues: [100, 250, 500] })
+  const protomuxRpcClient = new ProtomuxRpcClient(dht, { requestTimeout: 1000, backoffValues: [100, 250, 500] })
 
   const { scraperProtomuxRpcClient, scraperPubKey } = await setupscraperRpcClient(t, bootstrap)
   const getMetrics = async () => {
     await new Promise(resolve => setTimeout(resolve, 250))
     return 'late reply'
   }
-  const dhtPromClient = new DhtPromClient(dht, rpcClient, getMetrics, scraperPubKey, 'dummy-alias', dummySecret)
+  const dhtPromClient = new DhtPromClient(dht, getMetrics, scraperPubKey, 'dummy-alias', dummySecret, { protomuxRpcClient })
   await dhtPromClient.ready()
 
   const scraper = await setupScraper(
@@ -130,7 +129,6 @@ test('Scraper can timeout', async t => {
   )
 
   await dhtPromClient.close()
-  await rpcClient.close()
 })
 
 test('Other clients cannot get metrics', async t => {
@@ -319,13 +317,12 @@ async function setup (t, clientOpts = {}) {
   const protomuxRpcClient = new ProtomuxRpcClient(dht, { requestTimeout: 1000, backoffValues: [100, 250, 500] })
   const dhtPromClient = new DhtPromClient(
     dht,
-    protomuxRpcClient,
     promClient,
     scraperPubKey,
     'dummy-alias',
     dummySecret,
     'my-service',
-    { ...clientOpts, hostname: 'my-hostname' }
+    { ...clientOpts, hostname: 'my-hostname', protomuxRpcClient }
   )
 
   t.teardown(async () => {
