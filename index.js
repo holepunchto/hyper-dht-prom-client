@@ -9,16 +9,18 @@ const HyperDHT = require('hyperdht')
 
 const { MetricsReplyEnc, MetricsReqEnc } = require('./lib/encodings')
 const AliasRpcClient = require('dht-prom-alias-rpc/client')
+const ProtomuxRpcClient = require('protomux-rpc-client')
 
 const PROTOCOL_NAME = 'prometheus-metrics'
 
 class DhtPromClient extends ReadyResource {
-  constructor (dht, protomuxRpcClient, getMetrics, scraperPublicKey, alias, scraperSecret, service, { keyPair, registerIntervalMs = 1000 * 60 * 60, hostname = os.hostname() } = {}) {
+  constructor (dht, getMetrics, scraperPublicKey, alias, scraperSecret, service, { keyPair, registerIntervalMs = 1000 * 60 * 60, hostname = os.hostname(), protomuxRpcClient = null } = {}) {
     super()
 
     scraperPublicKey = idEnc.decode(scraperPublicKey)
     scraperSecret = idEnc.decode(scraperSecret)
     this.dht = dht
+    this.protomuxRpcClient = protomuxRpcClient || new ProtomuxRpcClient(this.dht)
 
     const isPromClient = getMetrics.register?.metrics != null
     this.promClient = isPromClient ? getMetrics : null
@@ -46,7 +48,7 @@ class DhtPromClient extends ReadyResource {
     this.aliasClient = new AliasRpcClient(
       this.scraperPublicKey,
       scraperSecret,
-      protomuxRpcClient
+      this.protomuxRpcClient
     )
 
     this.registerIntervalMs = registerIntervalMs
@@ -82,6 +84,7 @@ class DhtPromClient extends ReadyResource {
 
   async _close () {
     if (this._registerInterval) clearInterval(this._registerInterval)
+    await this.protomuxRpcClient.close()
     await this.dht.destroy()
   }
 
