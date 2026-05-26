@@ -14,7 +14,20 @@ const ProtomuxRpcClient = require('protomux-rpc-client')
 const PROTOCOL_NAME = 'prometheus-metrics'
 
 class DhtPromClient extends ReadyResource {
-  constructor (dht, getMetrics, scraperPublicKey, alias, scraperSecret, service, { keyPair, registerIntervalMs = 1000 * 60 * 60, hostname = os.hostname(), protomuxRpcClient = null } = {}) {
+  constructor(
+    dht,
+    getMetrics,
+    scraperPublicKey,
+    alias,
+    scraperSecret,
+    service,
+    {
+      keyPair,
+      registerIntervalMs = 1000 * 60 * 60,
+      hostname = os.hostname(),
+      protomuxRpcClient = null
+    } = {}
+  ) {
     super()
 
     scraperPublicKey = idEnc.decode(scraperPublicKey)
@@ -22,7 +35,7 @@ class DhtPromClient extends ReadyResource {
     this.dht = dht
     this.protomuxRpcClient = protomuxRpcClient || new ProtomuxRpcClient(this.dht)
 
-    const isPromClient = getMetrics.register?.metrics != null
+    const isPromClient = Boolean(getMetrics.register?.metrics)
     this.promClient = isPromClient ? getMetrics : null
     this.getMetrics = isPromClient
       ? getMetrics.register.metrics.bind(getMetrics.register)
@@ -55,15 +68,18 @@ class DhtPromClient extends ReadyResource {
     this._registerInterval = null
   }
 
-  get publicKey () {
+  get publicKey() {
     return this.serverKeyPair.publicKey
   }
 
   // Never throws
-  async _tryRegisterAlias () {
+  async _tryRegisterAlias() {
     try {
       const updated = await this.aliasClient.registerAlias(
-        this.alias, this.publicKey, this.hostname, this.service
+        this.alias,
+        this.publicKey,
+        this.hostname,
+        this.service
       )
       this.emit('register-alias-success', { updated })
     } catch (e) {
@@ -73,22 +89,20 @@ class DhtPromClient extends ReadyResource {
     }
   }
 
-  async _open () {
+  async _open() {
     await this.server.listen(this.serverKeyPair)
 
-    this._registerInterval = setInterval(
-      this._tryRegisterAlias.bind(this), this.registerIntervalMs
-    )
+    this._registerInterval = setInterval(this._tryRegisterAlias.bind(this), this.registerIntervalMs)
     this._tryRegisterAlias() // Never throws
   }
 
-  async _close () {
+  async _close() {
     if (this._registerInterval) clearInterval(this._registerInterval)
     await this.protomuxRpcClient.close()
     await this.dht.destroy()
   }
 
-  _onconnection (socket) {
+  _onconnection(socket) {
     const uid = crypto.randomUUID()
     const remotePublicKey = socket.remotePublicKey
     const remoteAddress = `${socket.rawStream.remoteHost}:${socket.rawStream.remotePort}`
@@ -138,27 +152,32 @@ class DhtPromClient extends ReadyResource {
     )
   }
 
-  _firewall (remotePublicKey, payload, address) {
-    const isScraper = b4a.equals(
-      remotePublicKey,
-      this.scraperPublicKey
-    )
+  _firewall(remotePublicKey, payload, address) {
+    const isScraper = b4a.equals(remotePublicKey, this.scraperPublicKey)
 
     if (!isScraper) {
       const { host, port } = address
-      this.emit('firewall-block', { remotePublicKey, payload, address: `${host}:${port}` })
+      this.emit('firewall-block', {
+        remotePublicKey,
+        payload,
+        address: `${host}:${port}`
+      })
     }
 
     return !isScraper
   }
 
-  registerLogger (logger) {
+  registerLogger(logger) {
     this.on('firewall-block', ({ remotePublicKey, address }) => {
-      logger.info(`Firewall blocked unauthorised connection attempt from ${address} (public key: ${idEnc.normalize(remotePublicKey)})`)
+      logger.info(
+        `Firewall blocked unauthorised connection attempt from ${address} (public key: ${idEnc.normalize(remotePublicKey)})`
+      )
     })
 
     this.aliasClient.on('alias-attempt', ({ alias, targetKey, hostname, service }) => {
-      logger.info(`Prom client attempting to register ${this.alias}->${idEnc.normalize(targetKey)} for service ${service} at host ${hostname}}`)
+      logger.info(
+        `Prom client attempting to register ${this.alias}->${idEnc.normalize(targetKey)} for service ${service} at host ${hostname}}`
+      )
     })
     this.on('register-alias-success', ({ updated }) => {
       logger.info(`Prom client successfully registered alias ${this.alias} (updated: ${updated})`)
@@ -168,18 +187,26 @@ class DhtPromClient extends ReadyResource {
     })
 
     this.on('connection-open', ({ uid, remotePublicKey }) => {
-      logger.info(`Prom client opened connection to ${idEnc.normalize(remotePublicKey)} (uid: ${uid})`)
+      logger.info(
+        `Prom client opened connection to ${idEnc.normalize(remotePublicKey)} (uid: ${uid})`
+      )
     })
     this.on('connection-close', ({ uid, remotePublicKey }) => {
-      logger.info(`Prom client closed connection to ${idEnc.normalize(remotePublicKey)} (uid: ${uid})`)
+      logger.info(
+        `Prom client closed connection to ${idEnc.normalize(remotePublicKey)} (uid: ${uid})`
+      )
     })
     this.on('connection-error', ({ error, uid, remotePublicKey }) => {
-      logger.info(`Prom client error on connection to ${idEnc.normalize(remotePublicKey)}: ${error.stack} (uid: ${uid})`)
+      logger.info(
+        `Prom client error on connection to ${idEnc.normalize(remotePublicKey)}: ${error.stack} (uid: ${uid})`
+      )
     })
 
     if (logger.level === 'debug') {
       this.on('metrics-request', ({ uid, remotePublicKey }) => {
-        logger.debug(`Prom client received metrics request from ${idEnc.normalize(remotePublicKey)} (uid: ${uid})`)
+        logger.debug(
+          `Prom client received metrics request from ${idEnc.normalize(remotePublicKey)} (uid: ${uid})`
+        )
       })
       this.on('metrics-success', ({ uid }) => {
         logger.debug(`Prom client successfully processed metrics request (uid: ${uid})`)

@@ -5,12 +5,12 @@ const { MetricsReplyEnc, MetricsReqEnc } = require('./lib/encodings')
 const PROTOCOL_NAME = 'prometheus-metrics'
 
 class DhtPromScraper {
-  constructor (protomuxRpcClient, promClientPubKey) {
+  constructor(protomuxRpcClient, promClientPubKey) {
     this.targetKey = idEnc.decode(promClientPubKey)
     this.rpcClient = protomuxRpcClient
   }
 
-  async requestMetrics ({ major, minor, timeout } = {}) {
+  async requestMetrics({ major, minor, timeout } = {}) {
     // Note: can throw
     // (for example on req timeout or if rpc closed halfway through)
 

@@ -38,12 +38,13 @@ Create a new DHT Prom client.
 
 - `dht` is a [HyperDHT](https://github.com/holepunchto/hyperdht) instance. Its lifecycle is managed by the DHT Prom Client.
 - `promClient|getMetrics` is either a [prom-client](https://github.com/siimon/prom-client) instance, or a function which returns metrics in Prometheus format.
--  `scraperPublicKey` is the public key of the [DHT Prometheus](https://github.com/HDegroote/dht-prometheus) instance which will scrape us, in any format (hex, z32 or binary)
+- `scraperPublicKey` is the public key of the [DHT Prometheus](https://github.com/HDegroote/dht-prometheus) instance which will scrape us, in any format (hex, z32 or binary)
 - `alias` is the alias we wish to register with the scraper. Each alias should be unique for that scraper (the previous entry gets overwritten)
 - `scraperSecret` is the secret with which we prove our right to register our alias with the scraper. It is a 32-byte buffer (or equivalent hex/z32 string)
 - `service` is the name of the service of which we are an instance (useful for grouping processes in a Prometheus dashboard)
 
 `opts` include:
+
 - `registerIntervalMs`: how frequently you wish to re-register yourself with the scraper (in ms). It should be less than the `entryExpiryMs` option of DHT Prometheus. Defaults to 1 hour.
 - `hostname`: the hostname where you run. Defaults to `os.hostname()`. Useful for filtering processes in a Prometheus dashboard.
 - `protomuxRpcClient`: a [Protomux-RPC-client](https://github.com/holepunchto/protomux-rpc-client) instance. Creates a new one by default. Its lifecycle is managed by the DHT Prom Client.
@@ -112,7 +113,7 @@ Emitted whenever someone other than the scraper tries to open a connection to th
 
 `payload` is the `remoteHandshakePayload` as document in HyperDHT's firewall documentation.
 
-`address` is the `ip:port`  of the firewalled peer.
+`address` is the `ip:port` of the firewalled peer.
 
 ## Scraper API
 
@@ -129,6 +130,7 @@ Create a new scraper.
 Requests the metrics from the client.
 
 `opts` include:
+
 - `timeout`: duration in ms before the request times out
 
 Throws is the client is unavailable, or if some other connection or protocol error occurs.
