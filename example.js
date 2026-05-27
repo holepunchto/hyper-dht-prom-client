@@ -7,7 +7,7 @@ const DhtPromClient = require('.') // require('dht-prom-client')
 const Scraper = require('./scraper') // require('dht-prom-client/scraper')
 const ProtomuxRpcClient = require('protomux-rpc-client')
 
-async function main () {
+async function main() {
   // To not rely on the public DHT
   const testnet = await createTestnet()
   const bootstrap = testnet.bootstrap
@@ -33,7 +33,7 @@ async function main () {
   )
 
   await dhtPromClient.ready() // Listening for 'metrics' requests
-  await new Promise(resolve => setTimeout(resolve, 500)) // Flush, for race conditions
+  await new Promise((resolve) => setTimeout(resolve, 500)) // Flush, for race conditions
 
   const scraper = new Scraper(scraperRpcClient, dhtPromClient.publicKey)
   const res = await scraper.requestMetrics()
