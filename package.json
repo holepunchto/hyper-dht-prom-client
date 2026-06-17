@@ -10,7 +10,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@gitlab.com/dcent-tech/hyper-dht-prom-client.git"
+    "url": "git+https://github.com/holepunchto/hyper-dht-prom-client.git"
   },
   "keywords": [
     "prometheus",
@@ -21,9 +21,9 @@
   "author": "Holepunch Inc",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://gitlab.com/dcent-tech/hyper-dht-prom-client/issues"
+    "url": "https://github.com/holepunchto/hyper-dht-prom-client/issues"
   },
-  "homepage": "https://gitlab.com/dcent-tech/hyper-dht-prom-client#readme",
+  "homepage": "https://github.com/holepunchto/hyper-dht-prom-client#readme",
   "dependencies": {
     "b4a": "^1.6.6",
     "bare-crypto": "^1.11.2",
