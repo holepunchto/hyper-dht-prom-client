@@ -150,3 +150,8 @@ Otherwise, returns either a success or a failure response:
   errorMessage: str
 }
 ```
+
+## Fork
+
+Forked on 2026-06-17 from https://gitlab.com/dcent-tech/dht-prom-client/,
+licensed under Apache-2.0. See NOTICE.

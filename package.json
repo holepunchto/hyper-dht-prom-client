@@ -1,5 +1,5 @@
 {
-  "name": "dht-prom-client",
+  "name": "hyper-dht-prom-client",
   "version": "2.1.1",
   "description": "Expose Prometheus metrics over a hyperdht server",
   "main": "index.js",
@@ -10,7 +10,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@gitlab.com/dcent-tech/dht-prom-client.git"
+    "url": "git+ssh://git@gitlab.com/dcent-tech/hyper-dht-prom-client.git"
   },
   "keywords": [
     "prometheus",
@@ -18,12 +18,12 @@
     "hyperdht",
     "dht"
   ],
-  "author": "H. Degroote",
+  "author": "Holepunch Inc",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://gitlab.com/dcent-tech/dht-prom-client/issues"
+    "url": "https://gitlab.com/dcent-tech/hyper-dht-prom-client/issues"
   },
-  "homepage": "https://gitlab.com/dcent-tech/dht-prom-client#readme",
+  "homepage": "https://gitlab.com/dcent-tech/hyper-dht-prom-client#readme",
   "dependencies": {
     "b4a": "^1.6.6",
     "bare-crypto": "^1.11.2",
