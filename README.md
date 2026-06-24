@@ -37,7 +37,7 @@ Currently, each client only supports getting scraped by one scraper, but it woul
 Create a new DHT Prom client.
 
 - `dht` is a [HyperDHT](https://github.com/holepunchto/hyperdht) instance. Its lifecycle is managed by the DHT Prom Client.
-- `promClient|getMetrics` is either a [prom-client](https://github.com/siimon/prom-client) instance, or a function which returns metrics in Prometheus format.
+- `promClient|getMetrics` is either a [bare-prom-client](https://github.com/holepunchto/bare-prom-client) instance, or a function which returns metrics in Prometheus format.
 - `scraperPublicKey` is the public key of the [DHT Prometheus](https://github.com/HDegroote/dht-prometheus) instance which will scrape us, in any format (hex, z32 or binary)
 - `alias` is the alias we wish to register with the scraper. Each alias should be unique for that scraper (the previous entry gets overwritten)
 - `scraperSecret` is the secret with which we prove our right to register our alias with the scraper. It is a 32-byte buffer (or equivalent hex/z32 string)
