@@ -1,8 +1,9 @@
+const process = require('process')
 const { spawn } = require('child_process')
 const path = require('path')
 
 const test = require('brittle')
-const promClient = require('prom-client')
+const promClient = require('bare-prom-client')
 const createTestnet = require('hyperdht/testnet')
 const HyperDHT = require('hyperdht')
 const hypCrypto = require('hypercore-crypto')

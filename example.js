@@ -1,6 +1,6 @@
 const HyperDHT = require('hyperdht')
 const createTestnet = require('hyperdht/testnet')
-const promClient = require('prom-client')
+const promClient = require('bare-prom-client')
 const hypCrypto = require('hypercore-crypto')
 
 const DhtPromClient = require('.') // require('dht-prom-client')
