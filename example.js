@@ -1,6 +1,6 @@
 const HyperDHT = require('hyperdht')
 const createTestnet = require('hyperdht/testnet')
-const promClient = require('prom-client')
+const promClient = require('bare-prom-client')
 const hypCrypto = require('hypercore-crypto')
 
 const DhtPromClient = require('.') // require('dht-prom-client')
@@ -38,7 +38,8 @@ async function main() {
   const scraper = new Scraper(scraperRpcClient, dhtPromClient.publicKey)
   const res = await scraper.requestMetrics()
 
-  console.log(res)
+  console.log('success:', res.success)
+  console.log('metrics:', res.metrics)
 
   await scraperRpcClient.close()
   await dht.destroy()
