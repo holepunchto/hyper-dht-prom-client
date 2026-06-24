@@ -38,7 +38,8 @@ async function main() {
   const scraper = new Scraper(scraperRpcClient, dhtPromClient.publicKey)
   const res = await scraper.requestMetrics()
 
-  console.log(res)
+  console.log('success', res.success)
+  console.log('metrics', res.metrics)
 
   await scraperRpcClient.close()
   await dht.destroy()
