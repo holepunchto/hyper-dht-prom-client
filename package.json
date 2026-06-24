@@ -4,7 +4,7 @@
   "description": "Expose Prometheus metrics over a hyperdht server",
   "main": "index.js",
   "scripts": {
-    "test": "npm run format:check && lunte &&  brittle --coverage test.js",
+    "test": "npm run format:check && lunte && brittle --coverage test.js",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
