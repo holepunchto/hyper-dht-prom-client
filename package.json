@@ -1,6 +1,6 @@
 {
   "name": "hyper-dht-prom-client",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "description": "Expose Prometheus metrics over a hyperdht server",
   "main": "index.js",
   "scripts": {
