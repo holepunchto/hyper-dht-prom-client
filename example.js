@@ -3,8 +3,8 @@ const createTestnet = require('hyperdht/testnet')
 const promClient = require('bare-prom-client')
 const hypCrypto = require('hypercore-crypto')
 
-const DhtPromClient = require('.') // require('dht-prom-client')
-const Scraper = require('./scraper') // require('dht-prom-client/scraper')
+const DhtPromClient = require('.') // require('hyper-dht-prom-client')
+const Scraper = require('./scraper') // require('hyper-dht-prom-client/scraper')
 const ProtomuxRpcClient = require('protomux-rpc-client')
 
 async function main() {
@@ -20,7 +20,7 @@ async function main() {
   const dht = new HyperDHT({ bootstrap })
 
   // Used to register the alias, which is not included in this demo
-  // (see dht-prometheus for that)
+  // (see hyper-dht-prometheus for that)
   const dummySecret = hypCrypto.randomBytes(32)
 
   const dhtPromClient = new DhtPromClient(

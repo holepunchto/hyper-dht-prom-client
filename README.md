@@ -1,11 +1,11 @@
-# DHT Prom Client
+# hyper-dht-prom-client
 
 Expose Prometheus metrics over a [hyperdht](https://github.com/holepunchto/hyperdht) server.
 
 ## Install
 
 ```
-npm i dht-prom-client
+npm i hyper-dht-prom-client
 ```
 
 ## Usage
@@ -14,7 +14,7 @@ See [./example](./example)
 
 ## Architecture
 
-A DHT Prom Client exposes a DHT server, and registers it with the scraper on startup. It then regularly reregisters itself. A shared secret is used for authentication.
+A Hyper DHT Prom Client exposes a DHT server, and registers it with the scraper on startup. It then regularly reregisters itself. A shared secret is used for authentication.
 
 Registering entails mapping the metrics server's public key to an alias. The alias should uniquely identify the client to the scraper.
 
@@ -38,7 +38,7 @@ Create a new DHT Prom client.
 
 - `dht` is a [HyperDHT](https://github.com/holepunchto/hyperdht) instance. Its lifecycle is managed by the DHT Prom Client.
 - `promClient|getMetrics` is either a [bare-prom-client](https://github.com/holepunchto/bare-prom-client) instance, or a function which returns metrics in Prometheus format.
-- `scraperPublicKey` is the public key of the [DHT Prometheus](https://github.com/HDegroote/dht-prometheus) instance which will scrape us, in any format (hex, z32 or binary)
+- `scraperPublicKey` is the public key of the [hyper-dht-prometheus](https://github.com/holepunchto/hyper-dht-prometheus) instance which will scrape us, in any format (hex, z32 or binary)
 - `alias` is the alias we wish to register with the scraper. Each alias should be unique for that scraper (the previous entry gets overwritten)
 - `scraperSecret` is the secret with which we prove our right to register our alias with the scraper. It is a 32-byte buffer (or equivalent hex/z32 string)
 - `service` is the name of the service of which we are an instance (useful for grouping processes in a Prometheus dashboard)
