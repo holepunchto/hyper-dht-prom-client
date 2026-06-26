@@ -8,7 +8,7 @@ const idEnc = require('hypercore-id-encoding')
 const HyperDHT = require('hyperdht')
 
 const { MetricsReplyEnc, MetricsReqEnc } = require('./lib/encodings')
-const AliasRpcClient = require('dht-prom-alias-rpc/client')
+const AliasRpcClient = require('hyper-dht-prom-alias-rpc/client')
 const ProtomuxRpcClient = require('protomux-rpc-client')
 
 const PROTOCOL_NAME = 'prometheus-metrics'
